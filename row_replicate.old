@@ -10,7 +10,7 @@ ASSUME NumColumns > 0
 
 CONSTANT Null
 
-\* some logic below is also assuming there're 2 columns 
+\* assuming all columns have UNIQUE constraint, and we call the first column "PK"
 Columns == 1..NumColumns
 
 ChangeType == {"insert", "update", "delete"}
@@ -37,11 +37,11 @@ define
       /\ Cardinality({row[i]: row \in upstream}) = Cardinality(upstream) 
       /\ Cardinality({row[i]: row \in downstream}) = Cardinality(downstream) 
   
-  ValuesAllUnique(row, rows) ==
+  IsRowValid(row, rows) ==
     \A col \in Columns: \A r \in rows: row[col] # r[col]
     
   ValidNewRows(current_rows) ==
-    {r \in RowType: ValuesAllUnique(r, current_rows)}
+    {r \in RowType: IsRowValid(r, current_rows)}
     
   ApplyOneChange(rows, one_change) ==
     ((rows \ {one_change.old}) \union {one_change.new}) \ {Null}
@@ -63,6 +63,9 @@ define
   
   Replace(rows, new_row) ==
     Insert({x \in rows: \A col \in Columns: x[col] # new_row[col]}, new_row)
+  
+  InsertIgnore(rows, new_row) ==
+    IF \E x \in rows: \E col \in Columns: x[col] = new_row[col] THEN rows ELSE Insert(rows, new_row)
 
   DataCorrectness == pc = "Done" => upstream = downstream
     
@@ -116,11 +119,11 @@ begin
     while log_index <= Len(change_log) do
       with change = change_log[log_index] do
         if change.type = "insert" then
-          downstream := Replace(downstream, change.new)
+          downstream := InsertIgnore(downstream, change.new)
         elsif change.type = "delete" then
           downstream := DeleteByPK(downstream, change.old)
         else
-          downstream := Replace(DeleteByPK(downstream, change.old), change.new)
+          downstream := InsertIgnore(DeleteByPK(downstream, change.old), change.new)
         end if;
       end with;
 
@@ -129,7 +132,7 @@ begin
       end with;
     end while;
 end algorithm; *)
-\* BEGIN TRANSLATION (chksum(pcal) = "9cbd902a" /\ chksum(tla) = "4efe207b")
+\* BEGIN TRANSLATION (chksum(pcal) = "d2ea70ba" /\ chksum(tla) = "454dac3b")
 VARIABLES round, upstream, downstream, change_log, log_index, pc
 
 (* define statement *)
@@ -144,11 +147,11 @@ AllColumnsUniqueInvariant ==
     /\ Cardinality({row[i]: row \in upstream}) = Cardinality(upstream)
     /\ Cardinality({row[i]: row \in downstream}) = Cardinality(downstream)
 
-ValuesAllUnique(row, rows) ==
+IsRowValid(row, rows) ==
   \A col \in Columns: \A r \in rows: row[col] # r[col]
 
 ValidNewRows(current_rows) ==
-  {r \in RowType: ValuesAllUnique(r, current_rows)}
+  {r \in RowType: IsRowValid(r, current_rows)}
 
 ApplyOneChange(rows, one_change) ==
   ((rows \ {one_change.old}) \union {one_change.new}) \ {Null}
@@ -167,6 +170,9 @@ DeleteByPK(rows, old_row) ==
 
 UpdateByPK(rows, old_row, new_row) ==
   IF old_row[1] \notin {x[1]: x \in rows} THEN rows ELSE DeleteByPK(rows, old_row) \union {new_row}
+
+Replace(rows, new_row) ==
+  Insert({x \in rows: \A col \in Columns: x[col] # new_row[col]}, new_row)
 
 DataCorrectness == pc = "Done" => upstream = downstream
 
@@ -203,10 +209,10 @@ SafeModeReplicate == /\ pc = "SafeModeReplicate"
                      /\ IF log_index <= Len(change_log)
                            THEN /\ LET change == change_log[log_index] IN
                                      IF change.type = "insert"
-                                        THEN /\ downstream' = Insert(downstream, change.new)
+                                        THEN /\ downstream' = Replace(downstream, change.new)
                                         ELSE /\ IF change.type = "delete"
                                                    THEN /\ downstream' = DeleteByPK(downstream, change.old)
-                                                   ELSE /\ downstream' = UpdateByPK(downstream, change.old, change.new)
+                                                   ELSE /\ downstream' = Replace(DeleteByPK(downstream, change.old), change.new)
                                 /\ \E index \in 1..(log_index + 1):
                                      log_index' = index
                                 /\ pc' = "SafeModeReplicate"
