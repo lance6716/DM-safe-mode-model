@@ -30,7 +30,8 @@ define
     /\ round >= 0
     /\ upstream \subseteq RowType
     /\ downstream \subseteq RowType
-    /\ \A i \in DOMAIN change_log: change_log[i] \in RowChangeType
+    /\ \A i \in DOMAIN change_log: i > 0 /\ change_log[i] \in RowChangeType
+    /\ log_index > 0
     
   AllColumnsUniqueInvariant ==
     \A i \in Columns:
@@ -42,9 +43,6 @@ define
     
   ValidNewRows(current_rows) ==
     {r \in RowType: IsRowValid(r, current_rows)}
-    
-  ApplyOneChange(rows, one_change) ==
-    ((rows \ {one_change.old}) \union {one_change.new}) \ {Null}
   
   Insert(rows, new_row) ==
     rows \union {new_row}
@@ -59,7 +57,7 @@ define
     {x \in rows: x[1] # old_row[1]}
   
   UpdateByPK(rows, old_row, new_row) ==
-    IF old_row[1] \notin {x[1]: x \in rows} THEN rows ELSE DeleteByPK(rows, old_row) \union {new_row}
+    IF old_row[1] \notin {x[1]: x \in rows} THEN rows ELSE Insert(DeleteByPK(rows, old_row), new_row)
   
   Replace(rows, new_row) ==
     Insert({x \in rows: \A col \in Columns: x[col] # new_row[col]}, new_row)
@@ -132,7 +130,7 @@ begin
       end with;
     end while;
 end algorithm; *)
-\* BEGIN TRANSLATION (chksum(pcal) = "ec6aef15" /\ chksum(tla) = "b4eab66f")
+\* BEGIN TRANSLATION (chksum(pcal) = "7ef21de3" /\ chksum(tla) = "768aeffe")
 VARIABLES round, upstream, downstream, change_log, log_index, pc
 
 (* define statement *)
@@ -140,7 +138,8 @@ TypeInvariant ==
   /\ round >= 0
   /\ upstream \subseteq RowType
   /\ downstream \subseteq RowType
-  /\ \A i \in DOMAIN change_log: change_log[i] \in RowChangeType
+  /\ \A i \in DOMAIN change_log: i > 0 /\ change_log[i] \in RowChangeType
+  /\ log_index > 0
 
 AllColumnsUniqueInvariant ==
   \A i \in Columns:
@@ -152,9 +151,6 @@ IsRowValid(row, rows) ==
 
 ValidNewRows(current_rows) ==
   {r \in RowType: IsRowValid(r, current_rows)}
-
-ApplyOneChange(rows, one_change) ==
-  ((rows \ {one_change.old}) \union {one_change.new}) \ {Null}
 
 Insert(rows, new_row) ==
   rows \union {new_row}
@@ -169,7 +165,7 @@ DeleteByPK(rows, old_row) ==
   {x \in rows: x[1] # old_row[1]}
 
 UpdateByPK(rows, old_row, new_row) ==
-  IF old_row[1] \notin {x[1]: x \in rows} THEN rows ELSE DeleteByPK(rows, old_row) \union {new_row}
+  IF old_row[1] \notin {x[1]: x \in rows} THEN rows ELSE Insert(DeleteByPK(rows, old_row), new_row)
 
 Replace(rows, new_row) ==
   Insert({x \in rows: \A col \in Columns: x[col] # new_row[col]}, new_row)
@@ -237,5 +233,5 @@ Termination == <>(pc = "Done")
 
 =============================================================================
 \* Modification History
-\* Last modified Sat Aug 27 21:07:25 CST 2022 by lance6716
+\* Last modified Sat Aug 27 21:31:33 CST 2022 by lance6716
 \* Created Thu Aug 25 16:02:35 CST 2022 by lance6716
